@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>💎 Finance Tracker</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#0f0f0f;color:#e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;}
+select,input,button{font-family:inherit;}
+button:active{opacity:0.85;}
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:#1a1a2e;}
+::-webkit-scrollbar-thumb{background:#374151;border-radius:3px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const{useState,useEffect,useMemo}=React;
+
+const CATEGORIES={
+  Income:       {subs:["Salary","Investments","Part Time","Other"],color:"#4ade80",bg:"#052e16",emoji:"💰"},
+  Transport:    {subs:["Car Loan","Fuel","Parking/Tolls","Maintenance","Other"],color:"#60a5fa",bg:"#1e3a5f",emoji:"🚗"},
+  "F&B":        {subs:["Groceries","Dine Out","Snacks","Other"],color:"#fb923c",bg:"#431407",emoji:"🍽️"},
+  Personal:     {subs:["Personal Care","Wears","Fitness","Subscriptions","Entertainment","Hobbies","Other"],color:"#c084fc",bg:"#3b0764",emoji:"✨"},
+  Health:       {subs:["Medical","Supplements","Health Insurance","Other"],color:"#f472b6",bg:"#500724",emoji:"❤️"},
+  Housing:      {subs:["Rental","Electricity Bill","Water Bill","Gas Bill","Internet Bill","Laundry","Home Supplies","Other"],color:"#34d399",bg:"#022c22",emoji:"🏠"},
+  Social:       {subs:["Gifts","Events","Other"],color:"#22d3ee",bg:"#083344",emoji:"👥"},
+  Miscellaneous:{subs:["Other"],color:"#facc15",bg:"#422006",emoji:"📦"},
+};
+const EXPENSE_CATS=["Transport","F&B","Personal","Health","Housing","Social","Miscellaneous"];
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const FULL_MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const PIE_COLORS=["#60a5fa","#fb923c","#c084fc","#f472b6","#34d399","#22d3ee","#facc15","#4ade80"];
+const fmt=n=>"RM "+Math.abs(n).toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2});
+const SK="ft_v6",SK_SAV="ft_sav_v6",SK_FC="ft_fc_v6";
+
+function gd(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}}
+function sd(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+
+function PieChart({data,size=140}){
+  if(!data||!data.length)return null;
+  const total=data.reduce((s,d)=>s+d.v,0);
+  if(!total)return null;
+  let cum=0;
+  const slices=data.map((d,i)=>{
+    const pct=d.v/total,a1=cum*2*Math.PI-Math.PI/2,a2=(cum+pct)*2*Math.PI-Math.PI/2;
+    cum+=pct;
+    const r=size/2-4,cx=size/2,cy=size/2;
+    const x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1),x2=cx+r*Math.cos(a2),y2=cy+r*Math.sin(a2);
+    return{path:`M${cx},${cy} L${x1},${y1} A${r},${r},0,${pct>0.5?1:0},1,${x2},${y2} Z`,color:PIE_COLORS[i%PIE_COLORS.length]};
+  });
+  return(
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {slices.map((s,i)=><path key={i} d={s.path} fill={s.color} stroke="#111827" strokeWidth={1.5}/>)}
+      <circle cx={size/2} cy={size/2} r={size/4} fill="#111827"/>
+    </svg>
+  );
+}
+
+function MiniLine({points,color="#4ade80"}){
+  if(!points||points.length<2)return null;
+  const w=300,h=60,pad=8,max=Math.max(...points,1);
+  const xs=points.map((_,i)=>pad+(i/(points.length-1))*(w-pad*2));
+  const ys=points.map(p=>h-pad-(p/max)*(h-pad*2));
+  return(
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{display:"block"}}>
+      <polyline points={xs.map((x,i)=>`${x},${ys[i]}`).join(" ")} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+      {xs.map((x,i)=><circle key={i} cx={x} cy={ys[i]} r={3} fill={color}/>)}
+    </svg>
+  );
+}
+
+const NAV=[
+  {id:"summary",label:"Summary",emoji:"📊"},
+  {id:"income",label:"Income",emoji:"💰"},
+  {id:"expenses",label:"Expenses",emoji:"💸"},
+  {id:"savings",label:"Savings",emoji:"🏦"},
+  {id:"freecash",label:"Free Cash",emoji:"💵"},
+  {id:"comparison",label:"Comparison",emoji:"📈"},
+];
+
+function App(){
+  const now=new Date();
+  const[txns,setTxns]=useState([]);
+  const[savings,setSavings]=useState({});
+  const[fcTxns,setFcTxns]=useState([]);
+  const[ready,setReady]=useState(false);
+  const[tab,setTab]=useState("summary");
+  const[view,setView]=useState("main");
+  const[month,setMonth]=useState(now.getMonth());
+  const[year,setYear]=useState(now.getFullYear());
+  const[editId,setEditId]=useState(null);
+  const[selectMode,setSelectMode]=useState(false);
+  const[selected,setSelected]=useState([]);
+  const[savTarget,setSavTarget]=useState("");
+  const[editSavKey,setEditSavKey]=useState(null);
+  const[cmpA,setCmpA]=useState(now.getMonth()===0?11:now.getMonth()-1);
+  const[cmpB,setCmpB]=useState(now.getMonth());
+  const[cmpYear,setCmpYear]=useState(now.getFullYear());
+  const[expMonth,setExpMonth]=useState(now.getMonth());
+  const[expYear,setExpYear]=useState(now.getFullYear());
+  const[fcForm,setFcForm]=useState({amount:"",note:"",date:now.toISOString().slice(0,10)});
+  const[form,setForm]=useState({category:"Transport",subcategory:"Fuel",amount:"",note:"",date:now.toISOString().slice(0,10)});
+
+  useEffect(()=>{
+    const t=gd(SK),s=gd(SK_SAV),f=gd(SK_FC);
+    setTxns(t||[]);
+    setSavings(s||{});
+    setFcTxns(f||[]);
+    setReady(true);
+  },[]);
+
+  const mkKey=(m,y)=>`${y}-${String(m+1).padStart(2,"0")}`;
+  const years=Array.from({length:5},(_,i)=>now.getFullYear()-2+i);
+  const defaultDate=(m,y)=>{
+    if(m===now.getMonth()&&y===now.getFullYear()) return now.toISOString().slice(0,10);
+    return `${y}-${String(m+1).padStart(2,"0")}-01`;
+  };
+
+  const filtered=useMemo(()=>txns.filter(t=>{const d=new Date(t.date);return d.getMonth()===month&&d.getFullYear()===year;}),[txns,month,year]);
+  const income=useMemo(()=>filtered.filter(t=>t.category==="Income").reduce((s,t)=>s+t.amount,0),[filtered]);
+  const expenses=useMemo(()=>filtered.filter(t=>t.category!=="Income").reduce((s,t)=>s+t.amount,0),[filtered]);
+  const savingTarget=useMemo(()=>parseFloat(savings[mkKey(month,year)]||0),[savings,month,year]);
+  const netAfterSav=income-expenses-savingTarget;
+  const freeCashMonth=Math.max(0,netAfterSav);
+  const catTotals=useMemo(()=>{const m={};filtered.filter(t=>t.category!=="Income").forEach(t=>{m[t.category]=(m[t.category]||0)+t.amount;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);},[filtered]);
+  const subcatMap=useMemo(()=>{const m={};filtered.filter(t=>t.category!=="Income").forEach(t=>{const k=`${t.category}__${t.subcategory}`;m[k]=(m[k]||0)+t.amount;});return m;},[filtered]);
+  const incomeBreakdown=useMemo(()=>{const m={};filtered.filter(t=>t.category==="Income").forEach(t=>{m[t.subcategory]=(m[t.subcategory]||0)+t.amount;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);},[filtered]);
+  const trendData=useMemo(()=>MONTHS.map((_,i)=>txns.filter(t=>{const d=new Date(t.date);return d.getMonth()===i&&d.getFullYear()===year&&t.category!=="Income";}).reduce((s,t)=>s+t.amount,0)),[txns,year]);
+  const savingsTrend=useMemo(()=>MONTHS.map((_,i)=>{
+    const key=mkKey(i,year),tgt=parseFloat(savings[key]||0);
+    const mo=txns.filter(t=>{const d=new Date(t.date);return d.getMonth()===i&&d.getFullYear()===year;});
+    const inc=mo.filter(t=>t.category==="Income").reduce((s,t)=>s+t.amount,0);
+    const exp=mo.filter(t=>t.category!=="Income").reduce((s,t)=>s+t.amount,0);
+    return{month:MONTHS[i],target:tgt,net:inc-exp-tgt};
+  }),[txns,savings,year]);
+  const freeCashMonths=useMemo(()=>{
+    const result=[];
+    for(let i=0;i<12;i++){
+      const key=mkKey(i,year),tgt=parseFloat(savings[key]||0);
+      const mo=txns.filter(t=>{const d=new Date(t.date);return d.getMonth()===i&&d.getFullYear()===year;});
+      const inc=mo.filter(t=>t.category==="Income").reduce((s,t)=>s+t.amount,0);
+      const exp=mo.filter(t=>t.category!=="Income").reduce((s,t)=>s+t.amount,0);
+      const fc=Math.max(0,inc-exp-tgt);
+      const used=fcTxns.filter(f=>{
+        const d=new Date(f.date+"T00:00:00");
+        return d.getMonth()===i&&d.getFullYear()===year;
+      }).reduce((s,f)=>s+parseFloat(f.amount||0),0);
+      if(inc>0||exp>0)result.push({month:MONTHS[i],idx:i,freeCash:fc,used,remaining:fc-used});
+    }
+    return result;
+  },[txns,savings,fcTxns,year]);
+  const totalFreeCash=freeCashMonths.reduce((s,m)=>s+m.freeCash,0);
+  const totalFcUsed=freeCashMonths.reduce((s,m)=>s+m.used,0);
+  const totalFcRemaining=freeCashMonths.reduce((s,m)=>s+m.remaining,0);
+  const cmpData=useMemo(()=>{
+    const getM=mo=>txns.filter(t=>{const d=new Date(t.date);return d.getMonth()===mo&&d.getFullYear()===cmpYear;});
+    const tA=getM(cmpA),tB=getM(cmpB);
+    const sum=(arr,isInc)=>arr.filter(t=>isInc?t.category==="Income":t.category!=="Income").reduce((s,t)=>s+t.amount,0);
+    return{incA:sum(tA,true),incB:sum(tB,true),expA:sum(tA,false),expB:sum(tB,false),
+      cats:EXPENSE_CATS.map(c=>({cat:c,a:tA.filter(t=>t.category===c).reduce((s,t)=>s+t.amount,0),b:tB.filter(t=>t.category===c).reduce((s,t)=>s+t.amount,0)})).filter(x=>x.a>0||x.b>0)};
+  },[txns,cmpA,cmpB,cmpYear]);
+
+  const barMax=catTotals.length?catTotals[0][1]:1;
+  const savingsRate=income>0?Math.max(0,(savingTarget+freeCashMonth)/income*100):0;
+
+  function uf(k,v){setForm(f=>{const n={...f,[k]:v};if(k==="category")n.subcategory=CATEGORIES[v].subs[0];return n;});}
+
+  function submit(){
+    if(!form.amount||isNaN(+form.amount)||+form.amount<=0)return;
+    const cat=tab==="income"?"Income":form.category;
+    const e={id:editId||String(Date.now()),category:cat,subcategory:form.subcategory,amount:parseFloat(form.amount),note:form.note,date:form.date};
+    const updated=editId?txns.map(t=>t.id===editId?e:t):[e,...txns];
+    setTxns(updated);sd(SK,updated);setEditId(null);
+    setForm({category:tab==="income"?"Income":"Transport",subcategory:tab==="income"?"Salary":"Fuel",amount:"",note:"",date:defaultDate(month,year)});
+    setView("main");
+  }
+
+  function startEdit(t){
+    setEditId(t.id);
+    setForm({category:t.category,subcategory:t.subcategory,amount:String(t.amount),note:t.note||"",date:t.date});
+    setView("add");
+  }
+
+  function doDelete(id){const u=txns.filter(t=>t.id!==id);setTxns(u);sd(SK,u);}
+  function doDeleteSelected(){const u=txns.filter(t=>selected.indexOf(t.id)===-1);setTxns(u);sd(SK,u);setSelected([]);setSelectMode(false);}
+  function toggleSelect(id){setSelected(s=>s.indexOf(id)!==-1?s.filter(x=>x!==id):[...s,id]);}
+  function toggleSelectAll(list){
+    const allSel=list.every(t=>selected.indexOf(t.id)!==-1);
+    if(allSel){setSelected(s=>s.filter(x=>list.findIndex(t=>t.id===x)===-1));}
+    else{const toAdd=list.filter(t=>selected.indexOf(t.id)===-1).map(t=>t.id);setSelected(s=>[...s,...toAdd]);}
+  }
+
+  function saveSavTarget(mo,yr){
+    const key=mkKey(mo,yr),v=parseFloat(savTarget)||0;
+    const upd={...savings,[key]:v};
+    setSavings(upd);sd(SK_SAV,upd);setEditSavKey(null);setSavTarget("");
+  }
+
+  function addFcTxn(){
+    if(!fcForm.amount||isNaN(+fcForm.amount)||+fcForm.amount<=0)return;
+    const e={id:String(Date.now()),amount:parseFloat(fcForm.amount),note:fcForm.note,date:fcForm.date};
+    const u=[e,...fcTxns];setFcTxns(u);sd(SK_FC,u);
+    setFcForm({amount:"",note:"",date:now.toISOString().slice(0,10)});
+  }
+
+  function doDelFc(id){const u=fcTxns.filter(f=>f.id!==id);setFcTxns(u);sd(SK_FC,u);}
+
+  function exportBackup(){
+    try{
+      const backup={version:1,txns,savings,fcTxns,exportedAt:new Date().toISOString()};
+      const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");a.href=url;a.download="finance_backup_"+new Date().toISOString().slice(0,10)+".json";
+      document.body.appendChild(a);a.click();
+      setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},100);
+    }catch(e){
+      const backup={version:1,txns,savings,fcTxns};
+      const a=document.createElement("a");
+      a.setAttribute("href","data:application/json;charset=utf-8,"+encodeURIComponent(JSON.stringify(backup)));
+      a.setAttribute("download","finance_backup.json");
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+    }
+  }
+
+  function importBackup(e){
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const data=JSON.parse(ev.target.result);
+        if(!data.version||!data.txns){alert("Invalid backup file.");return;}
+        setTxns(data.txns||[]);sd(SK,data.txns||[]);
+        setSavings(data.savings||{});sd(SK_SAV,data.savings||{});
+        setFcTxns(data.fcTxns||[]);sd(SK_FC,data.fcTxns||[]);
+        alert("✅ Restored! "+( data.txns||[]).length+" transactions loaded.");
+      }catch{alert("Failed to read backup file.");}
+    };
+    reader.readAsText(file);e.target.value="";
+  }
+
+  function exportCSV(){
+    const rows=txns.filter(t=>{const d=new Date(t.date);return d.getMonth()===expMonth&&d.getFullYear()===expYear;});
+    const lines=["Date,Category,Subcategory,Amount,Note",...rows.map(r=>[r.date,r.category,r.subcategory,r.amount,'"'+(r.note||"")+'"'].join(","))];
+    const a=document.createElement("a");
+    a.setAttribute("href","data:text/csv;charset=utf-8,"+encodeURIComponent(lines.join("\n")));
+    a.setAttribute("download","finance_"+MONTHS[expMonth]+"_"+expYear+".csv");
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+  }
+
+  const D={
+    wrap:{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",background:"#0f0f0f",minHeight:"100vh",padding:"1rem",color:"#e5e7eb",boxSizing:"border-box",maxWidth:680,margin:"0 auto"},
+    topbar:{display:"flex",alignItems:"center",justifyContent:"center",marginBottom:"1.25rem"},
+    navWrap:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:"1.5rem"},
+    navBtn:a=>({padding:"10px 6px",borderRadius:10,border:a?"2px solid #6366f1":"1px solid #374151",background:a?"#1e1b4b":"#1f2937",color:a?"#a5b4fc":"#9ca3af",cursor:"pointer",fontSize:12,fontWeight:a?600:400,display:"flex",flexDirection:"column",alignItems:"center",gap:3,textAlign:"center"}),
+    mrow:{display:"flex",gap:8,marginBottom:"1.25rem",alignItems:"center",flexWrap:"wrap",justifyContent:"center"},
+    sel:{padding:"7px 10px",borderRadius:8,border:"1px solid #374151",background:"#1f2937",color:"#e5e7eb",fontSize:13},
+    card:{background:"#1a1a2e",border:"1px solid #2d2d44",borderRadius:14,padding:"16px 18px",marginBottom:12},
+    ctitle:{fontSize:11,fontWeight:600,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14,textAlign:"center"},
+    mcard:{padding:"14px 16px",borderRadius:14,background:"#1a1a2e",border:"1px solid #2d2d44",textAlign:"center"},
+    mlbl:{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6},
+    mval:c=>({fontSize:18,fontWeight:600,color:c||"#f9fafb"}),
+    grid:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:"1.25rem"},
+    barRow:{display:"flex",alignItems:"center",gap:10,marginBottom:10},
+    bIcon:(c,bg)=>({width:28,height:28,borderRadius:8,background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}),
+    bLabel:{fontSize:13,width:85,color:"#9ca3af",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},
+    bTrack:{flex:1,height:8,borderRadius:4,background:"#374151",overflow:"hidden"},
+    bFill:(c,p)=>({height:"100%",width:Math.min(100,Math.max(0,p))+"%",background:c,borderRadius:4}),
+    bAmt:{fontSize:12,color:"#9ca3af",width:85,textAlign:"right",flexShrink:0},
+    txRow:{display:"flex",alignItems:"center",gap:10,padding:"11px 6px",borderBottom:"1px solid #1f2937"},
+    badge:(c,bg)=>({fontSize:11,padding:"3px 8px",borderRadius:20,background:bg,color:c,fontWeight:500,flexShrink:0}),
+    chip:(c,bg)=>({width:34,height:34,borderRadius:10,background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}),
+    outBtn:{padding:"7px 13px",borderRadius:8,border:"1px solid #374151",background:"#1f2937",color:"#9ca3af",cursor:"pointer",fontSize:12,display:"inline-flex",alignItems:"center",gap:4},
+    delBtn:{padding:"7px 13px",borderRadius:8,border:"1px solid #7f1d1d",background:"#1f2937",color:"#f87171",cursor:"pointer",fontSize:12,display:"inline-flex",alignItems:"center",gap:4},
+    greenBtn:{padding:"9px 16px",borderRadius:10,border:"1px solid #166534",background:"#14532d",color:"#4ade80",cursor:"pointer",fontSize:13,fontWeight:500,display:"inline-flex",alignItems:"center",gap:6},
+    addBtn:{padding:"9px 18px",borderRadius:10,border:"1px solid #4f46e5",background:"#312e81",color:"#c7d2fe",cursor:"pointer",fontSize:13,fontWeight:500,display:"inline-flex",alignItems:"center",gap:6},
+    purpleBtn:{padding:"7px 13px",borderRadius:8,border:"1px solid #5b21b6",background:"#3b0764",color:"#c084fc",cursor:"pointer",fontSize:12,display:"inline-flex",alignItems:"center",gap:4},
+    segRow:{display:"flex",borderRadius:10,overflow:"hidden",border:"1px solid #374151",marginBottom:16},
+    seg:(a,c)=>({flex:1,padding:"10px",textAlign:"center",cursor:"pointer",fontSize:13,fontWeight:a?600:400,background:a?c+"33":"transparent",color:a?c:"#6b7280",border:"none"}),
+    fLabel:{fontSize:12,color:"#9ca3af",display:"block",marginBottom:5,fontWeight:500,textAlign:"center"},
+    fInput:{width:"100%",padding:"9px 12px",borderRadius:10,border:"1px solid #374151",background:"#111827",color:"#e5e7eb",fontSize:14,boxSizing:"border-box",textAlign:"center"},
+    fGroup:{marginBottom:14},
+    saveBtn:{width:"100%",padding:"11px",marginTop:6,background:"#4f46e5",color:"#fff",border:"1px solid #6366f1",borderRadius:10,fontWeight:600,fontSize:14,cursor:"pointer"},
+    subGrid:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(165px,1fr))",gap:10},
+    subCard:(c,bg)=>({background:bg+"55",border:"1px solid "+c+"33",borderRadius:12,padding:"12px 14px"}),
+  };
+
+  if(!ready)return <div style={{background:"#0f0f0f",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"#6b7280",fontFamily:"inherit"}}>⏳ Loading...</div>;
+
+  if(view==="add"){
+    const isInc=tab==="income";
+    const cats=isInc?["Income"]:EXPENSE_CATS;
+    const subs=isInc?CATEGORIES.Income.subs:(CATEGORIES[form.category]?.subs||[]);
+    return(
+      <div style={D.wrap}>
+        <div style={D.topbar}><span style={{fontSize:20,fontWeight:600,color:"#f9fafb"}}>{editId?"✏️ Edit":"➕ Add"} {isInc?"Income":"Expense"}</span></div>
+        <div style={{textAlign:"center",marginBottom:12}}><button style={D.outBtn} onClick={()=>{setView("main");setEditId(null);}}>← Back</button></div>
+        <div style={D.card}>
+          <div style={{textAlign:"center",marginBottom:16}}>
+            <span style={{fontSize:32}}>{isInc?"💰":"💸"}</span>
+            <div style={{fontSize:13,color:isInc?"#4ade80":"#f87171",fontWeight:600,marginTop:4}}>{isInc?"Adding Income":"Adding Expense"}</div>
+          </div>
+          {!isInc&&<div style={D.fGroup}><label style={D.fLabel}>Category</label><select style={D.fInput} value={form.category} onChange={e=>uf("category",e.target.value)}>{cats.map(c=><option key={c}>{c}</option>)}</select></div>}
+          <div style={D.fGroup}><label style={D.fLabel}>Subcategory</label><select style={D.fInput} value={form.subcategory} onChange={e=>uf("subcategory",e.target.value)}>{subs.map(s=><option key={s}>{s}</option>)}</select></div>
+          <div style={D.fGroup}><label style={D.fLabel}>Date</label><input style={D.fInput} type="date" value={form.date} onChange={e=>uf("date",e.target.value)}/></div>
+          <div style={D.fGroup}><label style={D.fLabel}>Amount (RM)</label><input style={D.fInput} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e=>uf("amount",e.target.value)}/></div>
+          <div style={D.fGroup}><label style={D.fLabel}>Note (optional)</label><input style={D.fInput} type="text" placeholder="Add a note…" value={form.note} onChange={e=>uf("note",e.target.value)}/></div>
+          <button style={D.saveBtn} onClick={submit}>{editId?"💾 Save Changes":"✅ Add Transaction"}</button>
+        </div>
+      </div>
+    );
+  }
+
+  function TxRow({t,showEdit=true}){
+    const m=CATEGORIES[t.category];
+    const isSel=selected.indexOf(t.id)!==-1;
+    return(
+      <div style={{...D.txRow,background:isSel?"#1e1b4b":"transparent",cursor:selectMode?"pointer":"default",borderRadius:isSel?8:0}} onClick={selectMode?()=>toggleSelect(t.id):undefined}>
+        {selectMode&&<div style={{width:18,height:18,borderRadius:4,border:"2px solid "+(isSel?"#6366f1":"#4b5563"),background:isSel?"#6366f1":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff"}}>{isSel?"✓":""}</div>}
+        <div style={D.chip(m.color,m.bg)}><span>{m.emoji}</span></div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:500,color:"#e5e7eb"}}>{t.subcategory}{t.note?" · "+t.note:""}</div>
+          <div style={{fontSize:11,color:"#4b5563"}}>{t.date}</div>
+        </div>
+        <span style={D.badge(m.color,m.bg+"aa")}>{t.category}</span>
+        <span style={{fontSize:13,fontWeight:600,color:t.category==="Income"?"#4ade80":"#f87171",width:90,textAlign:"right",flexShrink:0}}>{t.category==="Income"?"+":"-"}{fmt(t.amount)}</span>
+        {showEdit&&!selectMode&&<span style={{display:"inline-flex",gap:4}}>
+          <button onClick={e=>{e.stopPropagation();startEdit(t);}} style={D.outBtn}>✏️</button>
+          <button onClick={e=>{e.stopPropagation();doDelete(t.id);}} style={D.delBtn}>🗑️</button>
+        </span>}
+      </div>
+    );
+  }
+
+  function SelectBar({list}){
+    const allSel=list.length>0&&list.every(t=>selected.indexOf(t.id)!==-1);
+    return(
+      <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center",flexWrap:"wrap",justifyContent:"center"}}>
+        {!selectMode
+          ?<button style={D.outBtn} onClick={()=>{setSelectMode(true);setSelected([]);}}>☑️ Select</button>
+          :<span style={{display:"inline-flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
+            <button style={D.outBtn} onClick={()=>toggleSelectAll(list)}>{allSel?"Deselect all":"Select all"}</button>
+            <button style={{...D.delBtn,background:selected.length>0?"#7f1d1d":"#1f2937",color:selected.length>0?"#fff":"#6b7280"}} onClick={()=>{if(selected.length>0)doDeleteSelected();}}>
+              {"🗑️ Delete"+(selected.length>0?" ("+selected.length+")":"")}
+            </button>
+            <button style={D.outBtn} onClick={()=>{setSelectMode(false);setSelected([]);}}>✕ Cancel</button>
+          </span>
+        }
+      </div>
+    );
+  }
+
+  return(
+    <div style={D.wrap}>
+      <div style={D.topbar}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:20,fontWeight:600,color:"#f9fafb"}}>💎 Finance Tracker</div>
+          <div style={{fontSize:11,color:"#4b5563",marginTop:2}}>{FULL_MONTHS[month]} {year}</div>
+        </div>
+      </div>
+
+      <div style={D.navWrap}>
+        {NAV.map(n=>(
+          <button key={n.id} style={D.navBtn(tab===n.id)} onClick={()=>{setTab(n.id);setSelectMode(false);setSelected([]);}}>
+            <span style={{fontSize:18}}>{n.emoji}</span><span>{n.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {tab!=="comparison"&&tab!=="freecash"&&(
+        <div style={D.mrow}>
+          <select style={D.sel} value={month} onChange={e=>setMonth(+e.target.value)}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
+          <select style={D.sel} value={year} onChange={e=>setYear(+e.target.value)}>{years.map(y=><option key={y}>{y}</option>)}</select>
+          {tab==="income"&&<button style={D.greenBtn} onClick={()=>{setForm({category:"Income",subcategory:"Salary",amount:"",note:"",date:defaultDate(month,year)});setView("add");}}>➕ Add Income</button>}
+          {tab==="expenses"&&<button style={D.addBtn} onClick={()=>{setForm({category:"Transport",subcategory:"Fuel",amount:"",note:"",date:defaultDate(month,year)});setView("add");}}>➕ Add Expense</button>}
+        </div>
+      )}
+
+      {tab==="summary"&&(
+        <div>
+          <div style={D.grid}>
+            <div style={D.mcard}><div style={D.mlbl}>💰 Income</div><div style={D.mval("#4ade80")}>{fmt(income)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>💸 Expenses</div><div style={D.mval("#f87171")}>{fmt(expenses)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>🏦 Savings</div><div style={D.mval("#c084fc")}>{fmt(savingTarget)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>🏷️ Net Balance</div><div style={D.mval(netAfterSav>=0?"#60a5fa":"#f87171")}>{netAfterSav<0?"-":""}{fmt(netAfterSav)}</div></div>
+            {income>0&&<div style={D.mcard}><div style={D.mlbl}>📈 Savings Rate</div><div style={D.mval("#facc15")}>{savingsRate.toFixed(1)}%</div></div>}
+          </div>
+          {catTotals.length>0&&(
+            <div style={D.card}>
+              <div style={D.ctitle}>📊 Expenses breakdown</div>
+              <div style={{display:"flex",justifyContent:"center",marginBottom:16}}><PieChart data={catTotals.map(x=>({label:x[0],v:x[1]}))} size={150}/></div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:"6px 16px",justifyContent:"center",marginBottom:16}}>
+                {catTotals.map((x,i)=><div key={x[0]} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#9ca3af"}}>
+                  <span style={{width:10,height:10,borderRadius:2,background:PIE_COLORS[i%PIE_COLORS.length],display:"inline-block",flexShrink:0}}></span>
+                  {x[0]} ({expenses>0?Math.round(x[1]/expenses*100):0}%)
+                </div>)}
+              </div>
+              {catTotals.map(x=>{const m=CATEGORIES[x[0]];return(
+                <div key={x[0]} style={D.barRow}>
+                  <div style={D.bIcon(m.color,m.bg)}><span>{m.emoji}</span></div>
+                  <div style={D.bLabel}>{x[0]}</div>
+                  <div style={D.bTrack}><div style={D.bFill(m.color,(x[1]/barMax)*100)}></div></div>
+                  <div style={D.bAmt}>{fmt(x[1])}</div>
+                </div>
+              );})}
+            </div>
+          )}
+          <div style={D.card}>
+            <div style={D.ctitle}>📉 Expense trend {year}</div>
+            <MiniLine points={trendData} color="#f87171"/>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+              {trendData.map((v,i)=><div key={i} style={{textAlign:"center",flex:1}}>
+                <div style={{fontSize:9,color:"#4b5563"}}>{MONTHS[i]}</div>
+                {v>0&&<div style={{fontSize:9,color:"#f87171"}}>{Math.round(v/100)/10}k</div>}
+              </div>)}
+            </div>
+          </div>
+          <div style={D.card}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={D.ctitle}>🕐 Recent transactions</div>
+              <button style={D.outBtn} onClick={()=>setTab("expenses")}>View all</button>
+            </div>
+            {filtered.length===0&&<p style={{color:"#4b5563",fontSize:13,margin:0,textAlign:"center"}}>No transactions yet.</p>}
+            {[...filtered].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5).map(t=><TxRow key={t.id} t={t} showEdit={false}/>)}
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>🔒 Backup & Restore</div>
+            <div style={{fontSize:12,color:"#6b7280",textAlign:"center",marginBottom:12}}>Download a full backup to keep your data safe. Restore anytime from a backup file.</div>
+            <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap",marginBottom:8}}>
+              <button style={D.greenBtn} onClick={exportBackup}>💾 Download Backup</button>
+              <button style={D.purpleBtn} onClick={()=>document.getElementById("restore-input").click()}>📂 Restore Backup</button>
+              <input id="restore-input" type="file" accept=".json" style={{display:"none"}} onChange={importBackup}/>
+            </div>
+            <div style={{fontSize:11,color:"#4b5563",textAlign:"center"}}>Includes all transactions, savings targets & free cash history.</div>
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>📥 Export to CSV</div>
+            <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+              <select style={D.sel} value={expMonth} onChange={e=>setExpMonth(+e.target.value)}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
+              <select style={D.sel} value={expYear} onChange={e=>setExpYear(+e.target.value)}>{years.map(y=><option key={y}>{y}</option>)}</select>
+              <button style={D.greenBtn} onClick={exportCSV}>⬇️ Download CSV</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab==="income"&&(
+        <div>
+          <div style={D.grid}>
+            <div style={D.mcard}><div style={D.mlbl}>💰 Total income</div><div style={D.mval("#4ade80")}>{fmt(income)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>📌 Sources</div><div style={D.mval("#4ade80")}>{incomeBreakdown.length}</div></div>
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>💰 Income sources</div>
+            {incomeBreakdown.length===0&&<p style={{color:"#4b5563",fontSize:13,margin:0,textAlign:"center"}}>No income recorded this month.</p>}
+            {incomeBreakdown.map(x=><div key={x[0]} style={D.barRow}>
+              <div style={D.bIcon("#4ade80","#052e16")}><span>💰</span></div>
+              <div style={D.bLabel}>{x[0]}</div>
+              <div style={D.bTrack}><div style={D.bFill("#4ade80",income>0?(x[1]/income)*100:0)}></div></div>
+              <div style={D.bAmt}>{fmt(x[1])}</div>
+            </div>)}
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>💰 Income transactions</div>
+            <SelectBar list={filtered.filter(t=>t.category==="Income")}/>
+            {filtered.filter(t=>t.category==="Income").length===0&&<p style={{color:"#4b5563",fontSize:13,margin:0,textAlign:"center"}}>No income this month.</p>}
+            {[...filtered].filter(t=>t.category==="Income").sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=><TxRow key={t.id} t={t}/>)}
+          </div>
+        </div>
+      )}
+
+      {tab==="expenses"&&(
+        <div>
+          <div style={D.grid}>
+            <div style={D.mcard}><div style={D.mlbl}>💸 Total expenses</div><div style={D.mval("#f87171")}>{fmt(expenses)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>📁 Categories</div><div style={D.mval("#f87171")}>{catTotals.length}</div></div>
+            {income>0&&<div style={D.mcard}><div style={D.mlbl}>📊 % of income</div><div style={D.mval("#facc15")}>{(expenses/income*100).toFixed(1)}%</div></div>}
+          </div>
+          {catTotals.length>0&&(
+            <div>
+              <div style={D.card}>
+                <div style={D.ctitle}>💸 By category</div>
+                {catTotals.map(x=>{const m=CATEGORIES[x[0]];return(
+                  <div key={x[0]} style={D.barRow}>
+                    <div style={D.bIcon(m.color,m.bg)}><span>{m.emoji}</span></div>
+                    <div style={D.bLabel}>{x[0]}</div>
+                    <div style={D.bTrack}><div style={D.bFill(m.color,(x[1]/barMax)*100)}></div></div>
+                    <div style={D.bAmt}>{fmt(x[1])}</div>
+                  </div>
+                );})}
+              </div>
+              <div style={D.card}>
+                <div style={D.ctitle}>🔍 Subcategory breakdown</div>
+                <div style={D.subGrid}>
+                  {catTotals.map(x=>{
+                    const m=CATEGORIES[x[0]];
+                    const entries=Object.entries(subcatMap).filter(e=>e[0].startsWith(x[0]+"__")).sort((a,b)=>b[1]-a[1]);
+                    if(!entries.length)return null;
+                    return(
+                      <div key={x[0]} style={D.subCard(m.color,m.bg)}>
+                        <div style={{fontSize:12,fontWeight:600,color:m.color,marginBottom:8,display:"flex",alignItems:"center",gap:5,justifyContent:"center"}}><span>{m.emoji}</span>{x[0]}</div>
+                        {entries.map(e=><div key={e[0]} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid "+m.color+"22"}}>
+                          <span style={{color:"#6b7280"}}>{e[0].split("__")[1]}</span>
+                          <span style={{fontWeight:500,color:m.color}}>{fmt(e[1])}</span>
+                        </div>)}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+          <div style={D.card}>
+            <div style={D.ctitle}>💸 Expense transactions</div>
+            <SelectBar list={filtered.filter(t=>t.category!=="Income")}/>
+            {filtered.filter(t=>t.category!=="Income").length===0&&<p style={{color:"#4b5563",fontSize:13,margin:0,textAlign:"center"}}>No expenses this month.</p>}
+            {[...filtered].filter(t=>t.category!=="Income").sort((a,b)=>new Date(b.date)-new Date(a.date)).map(t=><TxRow key={t.id} t={t}/>)}
+          </div>
+        </div>
+      )}
+
+      {tab==="savings"&&(
+        <div>
+          <div style={{...D.mrow,justifyContent:"center"}}>
+            <select style={D.sel} value={year} onChange={e=>setYear(+e.target.value)}>{years.map(y=><option key={y}>{y}</option>)}</select>
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>🏦 Savings targets — {year}</div>
+            {savingsTrend.map((row,i)=>{
+              const key=mkKey(i,year),isEdit=editSavKey===key;
+              return(
+                <div key={i} style={{padding:"10px 0",borderBottom:"1px solid #1f2937"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+                    <span style={{fontSize:13,fontWeight:500,color:"#e5e7eb",width:36}}>{row.month}</span>
+                    <div style={{display:"flex",gap:16,flex:1,justifyContent:"center",flexWrap:"wrap"}}>
+                      <span style={{fontSize:12,color:"#6b7280"}}>Target: <span style={{color:"#c084fc",fontWeight:600}}>{row.target>0?fmt(row.target):"—"}</span></span>
+                      <span style={{fontSize:12,color:"#6b7280"}}>Net: <span style={{color:row.net>=0?"#4ade80":"#f87171",fontWeight:600}}>{row.net<0?"-":""}{fmt(row.net)}</span></span>
+                    </div>
+                    <button style={D.purpleBtn} onClick={()=>{setEditSavKey(key);setSavTarget(String(savings[key]||""));}}>🎯 Set</button>
+                  </div>
+                  {isEdit&&(
+                    <div style={{display:"flex",gap:8,marginTop:8,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
+                      <input style={{...D.fInput,width:140}} type="number" min="0" step="50" placeholder="Target RM" value={savTarget} onChange={e=>setSavTarget(e.target.value)}/>
+                      <button style={D.greenBtn} onClick={()=>saveSavTarget(i,year)}>✅ Save</button>
+                      <button style={D.outBtn} onClick={()=>setEditSavKey(null)}>✕</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>📈 Net balance trend {year}</div>
+            <MiniLine points={savingsTrend.map(r=>Math.max(0,r.net))} color="#c084fc"/>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+              {savingsTrend.map((r,i)=><div key={i} style={{textAlign:"center",flex:1}}>
+                <div style={{fontSize:9,color:"#4b5563"}}>{r.month}</div>
+                {r.target>0&&<div style={{fontSize:9,color:"#c084fc"}}>{Math.round(r.target/100)/10}k</div>}
+              </div>)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab==="freecash"&&(
+        <div>
+          <div style={{...D.mrow,justifyContent:"center"}}>
+            <select style={D.sel} value={year} onChange={e=>setYear(+e.target.value)}>{years.map(y=><option key={y}>{y}</option>)}</select>
+          </div>
+          <div style={D.grid}>
+            <div style={D.mcard}><div style={D.mlbl}>💵 Total free cash</div><div style={D.mval("#22d3ee")}>{fmt(totalFreeCash)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>🛍️ Total used</div><div style={D.mval("#f87171")}>{fmt(totalFcUsed)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>✅ Remaining</div><div style={D.mval(totalFcRemaining>=0?"#4ade80":"#f87171")}>{fmt(totalFcRemaining)}</div></div>
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>💵 Free cash by month — {year}</div>
+            {freeCashMonths.length===0&&<p style={{color:"#4b5563",fontSize:13,margin:0,textAlign:"center"}}>No data yet.</p>}
+            {freeCashMonths.map(row=>(
+              <div key={row.month} style={{padding:"10px 0",borderBottom:"1px solid #1f2937"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+                  <span style={{fontSize:13,fontWeight:500,color:"#e5e7eb",width:36}}>{row.month}</span>
+                  <div style={{display:"flex",gap:14,flex:1,justifyContent:"center",flexWrap:"wrap"}}>
+                    <span style={{fontSize:12,color:"#6b7280"}}>Free: <span style={{color:"#22d3ee",fontWeight:600}}>{fmt(row.freeCash)}</span></span>
+                    <span style={{fontSize:12,color:"#6b7280"}}>Used: <span style={{color:"#f87171",fontWeight:600}}>{fmt(row.used)}</span></span>
+                    <span style={{fontSize:12,color:"#6b7280"}}>Left: <span style={{color:row.remaining>=0?"#4ade80":"#f87171",fontWeight:600}}>{fmt(row.remaining)}</span></span>
+                  </div>
+                </div>
+                <div style={{marginTop:6,height:6,borderRadius:3,background:"#374151",overflow:"hidden"}}>
+                  <div style={{height:"100%",width:(row.freeCash>0?Math.min(100,(row.used/row.freeCash)*100):0)+"%",background:"#f87171",borderRadius:3}}></div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>🛍️ Record free cash spending</div>
+            <div style={D.fGroup}><label style={D.fLabel}>Date</label><input style={D.fInput} type="date" value={fcForm.date} onChange={e=>setFcForm(f=>({...f,date:e.target.value}))}/></div>
+            <div style={D.fGroup}><label style={D.fLabel}>Amount (RM)</label><input style={D.fInput} type="number" min="0" step="0.01" placeholder="0.00" value={fcForm.amount} onChange={e=>setFcForm(f=>({...f,amount:e.target.value}))}/></div>
+            <div style={D.fGroup}><label style={D.fLabel}>Note</label><input style={D.fInput} type="text" placeholder="What did you spend on?" value={fcForm.note} onChange={e=>setFcForm(f=>({...f,note:e.target.value}))}/></div>
+            <button style={D.saveBtn} onClick={addFcTxn}>💵 Record Spending</button>
+          </div>
+          {fcTxns.length>0&&(
+            <div style={D.card}>
+              <div style={D.ctitle}>📋 Free cash history</div>
+              {[...fcTxns].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(f=>(
+                <div key={f.id} style={D.txRow}>
+                  <div style={D.chip("#22d3ee","#083344")}><span>💵</span></div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:500,color:"#e5e7eb"}}>{f.note||"Free cash spend"}</div>
+                    <div style={{fontSize:11,color:"#4b5563"}}>{f.date}</div>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:600,color:"#f87171",width:90,textAlign:"right",flexShrink:0}}>-{fmt(f.amount)}</span>
+                  <button onClick={()=>doDelFc(f.id)} style={D.delBtn}>🗑️</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab==="comparison"&&(
+        <div>
+          <div style={{...D.mrow,justifyContent:"center",gap:12,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:11,color:"#6b7280",fontWeight:500}}>Year</span>
+              <select style={D.sel} value={cmpYear} onChange={e=>setCmpYear(+e.target.value)}>{years.map(y=><option key={y}>{y}</option>)}</select>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{width:10,height:10,borderRadius:2,background:"#60a5fa",display:"inline-block"}}></span>
+              <select style={D.sel} value={cmpA} onChange={e=>setCmpA(+e.target.value)}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
+            </div>
+            <span style={{color:"#4b5563",fontSize:13,fontWeight:600}}>vs</span>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{width:10,height:10,borderRadius:2,background:"#c084fc",display:"inline-block"}}></span>
+              <select style={D.sel} value={cmpB} onChange={e=>setCmpB(+e.target.value)}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
+            </div>
+          </div>
+          <div style={D.grid}>
+            <div style={D.mcard}><div style={D.mlbl}>{"📅 "+MONTHS[cmpA]+" income"}</div><div style={D.mval("#60a5fa")}>{fmt(cmpData.incA)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>{"📅 "+MONTHS[cmpB]+" income"}</div><div style={D.mval("#c084fc")}>{fmt(cmpData.incB)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>{"💸 "+MONTHS[cmpA]+" exp"}</div><div style={D.mval("#60a5fa")}>{fmt(cmpData.expA)}</div></div>
+            <div style={D.mcard}><div style={D.mlbl}>{"💸 "+MONTHS[cmpB]+" exp"}</div><div style={D.mval("#c084fc")}>{fmt(cmpData.expB)}</div></div>
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>📊 Category comparison</div>
+            {cmpData.cats.length===0&&<p style={{color:"#4b5563",fontSize:13,margin:0,textAlign:"center"}}>No expense data for these months.</p>}
+            {cmpData.cats.map(x=>{
+              const m=CATEGORIES[x.cat],max=Math.max(x.a,x.b,1);
+              return(
+                <div key={x.cat} style={{marginBottom:16}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,justifyContent:"center"}}><span>{m.emoji}</span><span style={{fontSize:13,fontWeight:500,color:"#e5e7eb"}}>{x.cat}</span></div>
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11,color:"#60a5fa",width:32,flexShrink:0,textAlign:"right"}}>{MONTHS[cmpA]}</span>
+                      <div style={D.bTrack}><div style={D.bFill("#60a5fa",(x.a/max)*100)}></div></div>
+                      <span style={{fontSize:12,color:"#9ca3af",width:80,textAlign:"right",flexShrink:0}}>{fmt(x.a)}</span>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11,color:"#c084fc",width:32,flexShrink:0,textAlign:"right"}}>{MONTHS[cmpB]}</span>
+                      <div style={D.bTrack}><div style={D.bFill("#c084fc",(x.b/max)*100)}></div></div>
+                      <span style={{fontSize:12,color:"#9ca3af",width:80,textAlign:"right",flexShrink:0}}>{fmt(x.b)}</span>
+                    </div>
+                    {x.a>0&&x.b>0&&<div style={{fontSize:11,color:x.b>x.a?"#f87171":"#4ade80",textAlign:"center",marginTop:2}}>{x.b>x.a?"📈":"📉"} {Math.abs(((x.b-x.a)/x.a)*100).toFixed(1)}% {x.b>x.a?"more":"less"} than {MONTHS[cmpA]}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={D.card}>
+            <div style={D.ctitle}>📋 Summary comparison</div>
+            {[{label:"Income",a:cmpData.incA,b:cmpData.incB},{label:"Expenses",a:cmpData.expA,b:cmpData.expB},{label:"Net",a:cmpData.incA-cmpData.expA,b:cmpData.incB-cmpData.expB}].map(row=>{
+              const max=Math.max(Math.abs(row.a),Math.abs(row.b),1);
+              return(
+                <div key={row.label} style={{marginBottom:14}}>
+                  <div style={{fontSize:12,fontWeight:500,color:"#9ca3af",marginBottom:6,textAlign:"center"}}>{row.label}</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11,color:"#60a5fa",width:32,textAlign:"right",flexShrink:0}}>{MONTHS[cmpA]}</span>
+                      <div style={D.bTrack}><div style={D.bFill("#60a5fa",(Math.abs(row.a)/max)*100)}></div></div>
+                      <span style={{fontSize:12,color:"#9ca3af",width:80,textAlign:"right",flexShrink:0}}>{row.a<0?"-":""}{fmt(row.a)}</span>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11,color:"#c084fc",width:32,textAlign:"right",flexShrink:0}}>{MONTHS[cmpB]}</span>
+                      <div style={D.bTrack}><div style={D.bFill("#c084fc",(Math.abs(row.b)/max)*100)}></div></div>
+                      <span style={{fontSize:12,color:"#9ca3af",width:80,textAlign:"right",flexShrink:0}}>{row.b<0?"-":""}{fmt(row.b)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
