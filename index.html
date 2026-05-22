@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Lemonade 🍋"/>
+<link rel="apple-touch-icon" href="https://emojicdn.elk.sh/🍋?style=apple"/>
 <title>Finance Tracker 🍋</title>
 <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
@@ -64,7 +68,9 @@
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{background:#0a0a0a;color:#e5e7eb;font-family:'Trebuchet MS','Segoe UI',Arial,sans-serif;min-height:100vh;}
+html,body{background:#0a0a0a;color:#e5e7eb;font-family:'Trebuchet MS','Segoe UI',Arial,sans-serif;min-height:100vh;min-height:-webkit-fill-available;}
+html{height:-webkit-fill-available;}
+body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
 select,input,button{font-family:inherit;}
 button:active{opacity:0.85;}
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
