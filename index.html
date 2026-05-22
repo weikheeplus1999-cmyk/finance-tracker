@@ -10,6 +10,8 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
   const firebaseConfig = {
     apiKey: "AIzaSyC_H_KK6Os1Yov4xhkInqVntoFMGb-OxwQ",
     authDomain: "lemonade-tracker-e3827.firebaseapp.com",
@@ -18,16 +20,47 @@
     messagingSenderId: "577015316544",
     appId: "1:577015316544:web:4dcb88115a32ec1eb61fa5"
   };
+
+  const ALLOWED_EMAIL = "weikheeplus1999@gmail.com";
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+
   window._fbGet = async function(key) {
     try { const snap = await getDoc(doc(db,"lemonade",key)); return snap.exists()?snap.data().value:null; } catch(e){ return null; }
   };
   window._fbSet = async function(key, value) {
     try { await setDoc(doc(db,"lemonade",key), {value:value}); } catch(e){ console.error("Firebase save error:",e); }
   };
-  window._fbReady = true;
-  window.dispatchEvent(new Event("fbready"));
+  window._signIn = async function() {
+    try {
+      const result = await signInWithPopup(auth, provider);
+      if(result.user.email !== ALLOWED_EMAIL) {
+        await signOut(auth);
+        window._authState = "denied";
+        window.dispatchEvent(new Event("authchange"));
+        return;
+      }
+    } catch(e){ console.error("Sign in error:",e); }
+  };
+  window._signOut = async function() {
+    await signOut(auth);
+  };
+
+  onAuthStateChanged(auth, function(user) {
+    if(user && user.email === ALLOWED_EMAIL) {
+      window._authState = "allowed";
+      window._fbReady = true;
+      window.dispatchEvent(new Event("fbready"));
+    } else if(user) {
+      signOut(auth);
+      window._authState = "denied";
+    } else {
+      window._authState = "signedout";
+    }
+    window.dispatchEvent(new Event("authchange"));
+  });
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -135,6 +168,7 @@ const D={
 
 function App(){
   const now=new Date();
+  const[authState,setAuthState]=useState("loading");
   const[txns,setTxns]=useState([]);
   const[sav,setSav]=useState({});
   const[fc,setFc]=useState([]);
@@ -161,7 +195,16 @@ function App(){
   const[form,setForm]=useState({category:"Transport",subcategory:"Fuel",amount:"",note:"",date:now.toISOString().slice(0,10)});
 
   function loadData(){Promise.all([gd(SK),gd(SK_S),gd(SK_F)]).then(function(res){const t=res[0],s=res[1],f=res[2];const existing=t||[];const aids=APRIL.map(function(x){return x.id;});const merged=existing.filter(function(x){return aids.indexOf(x.id)===-1;}).concat(APRIL);setTxns(merged);sd(SK,merged);if(s)setSav(s);if(f)setFc(f);setRdy(true);});}
-  useEffect(function(){if(window._fbReady){loadData();}else{window.addEventListener("fbready",function(){loadData();});setTimeout(function(){if(!ready)loadData();},3000);};},[]);
+
+  useEffect(function(){
+    function onAuth(){setAuthState(window._authState||"loading");}
+    function onFb(){loadData();}
+    window.addEventListener("authchange",onAuth);
+    window.addEventListener("fbready",onFb);
+    if(window._authState)setAuthState(window._authState);
+    if(window._fbReady)loadData();
+    return function(){window.removeEventListener("authchange",onAuth);window.removeEventListener("fbready",onFb);};
+  },[]);
 
   const yrs=Array.from({length:5},function(_,i){return now.getFullYear()-2+i;});
   const dd=function(m,y){return m===now.getMonth()&&y===now.getFullYear()?now.toISOString().slice(0,10):y+"-"+String(m+1).padStart(2,"0")+"-01";};
@@ -212,10 +255,32 @@ function App(){
   function impBk(e){var file=e.target.files[0];if(!file)return;var r=new FileReader();r.onload=function(ev){try{var d=JSON.parse(ev.target.result);if(!d.version||!d.txns){alert("Invalid backup.");return;}setTxns(d.txns||[]);sd(SK,d.txns||[]);setSav(d.savings||{});sd(SK_S,d.savings||{});setFc(d.fcTxns||[]);sd(SK_F,d.fcTxns||[]);alert("Restored! "+(d.txns||[]).length+" transactions loaded.");}catch(err){alert("Failed to read file.");}};r.readAsText(file);e.target.value="";}
   function expCSV(){var rows=txns.filter(function(t){return sameMo(t.date,expMo,expYr);});var lines=["Date,Category,Subcategory,Amount,Note"].concat(rows.map(function(r){return[r.date,r.category,r.subcategory,r.amount,'"'+(r.note||"")+'"'].join(",");}));var a=document.createElement("a");a.setAttribute("href","data:text/csv;charset=utf-8,"+encodeURIComponent(lines.join("\n")));a.setAttribute("download","lemonade_"+MO[expMo]+"_"+expYr+".csv");document.body.appendChild(a);a.click();document.body.removeChild(a);}
 
-  if(!ready)return(<div style={{background:"#0a0a0a",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><div style={{fontSize:40}}>🍋</div><div style={{fontSize:14,color:"#ffd60a",fontWeight:700,letterSpacing:1}}>LOADING LEMONADE...</div><div style={{fontSize:11,color:"#555"}}>Connecting to cloud...</div></div>);
+  if(authState==="loading")return(<div style={{background:"#0a0a0a",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><div style={{fontSize:40}}>🍋</div><div style={{fontSize:14,color:"#ffd60a",fontWeight:700,letterSpacing:1}}>LOADING LEMONADE...</div></div>);
+
+  if(authState==="signedout")return(
+    <div style={{background:"#0a0a0a",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,padding:24}}>
+      <div style={{fontSize:48}}>🍋</div>
+      <div style={{fontSize:22,fontWeight:900,color:"#fff",letterSpacing:2,textTransform:"uppercase",fontStyle:"italic"}}>Finance Tracker</div>
+      <div style={{fontSize:12,color:"#555",marginTop:-8}}>Lemonade Project · by Damon99</div>
+      <button onClick={function(){window._signIn();}} style={{marginTop:16,padding:"12px 28px",borderRadius:10,border:"1px solid #ffd60a",background:"#2a2200",color:"#ffd60a",cursor:"pointer",fontSize:14,fontWeight:700,display:"flex",alignItems:"center",gap:8}}>
+        <span>🔐</span> Sign in with Google
+      </button>
+    </div>
+  );
+
+  if(authState==="denied")return(
+    <div style={{background:"#0a0a0a",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,padding:24}}>
+      <div style={{fontSize:40}}>🚫</div>
+      <div style={{fontSize:16,fontWeight:700,color:"#f87171"}}>Access Denied</div>
+      <div style={{fontSize:12,color:"#555",textAlign:"center"}}>This tracker is private. You are not authorised to access it.</div>
+      <button onClick={function(){window._signOut();}} style={{marginTop:8,padding:"9px 20px",borderRadius:9,border:"1px solid #2a2a2a",background:"#1a1a1a",color:"#9ca3af",cursor:"pointer",fontSize:12}}>← Sign out</button>
+    </div>
+  );
+
+  if(!ready)return(<div style={{background:"#0a0a0a",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><div style={{fontSize:40}}>🍋</div><div style={{fontSize:14,color:"#ffd60a",fontWeight:700,letterSpacing:1}}>LOADING YOUR DATA...</div><div style={{fontSize:11,color:"#555"}}>Connecting to cloud...</div></div>);
 
   var Footer=(<div style={D.footer}><div>🍋 Lemonade Project</div><div>Squeeze &amp; Made</div><div>by Damon99</div></div>);
-  var Header=(<div style={D.hdr}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={D.hT}>Finance Tracker 🍋</div><div style={D.hS}>{FMO[mo]} {yr}</div></div><div style={D.hC}><div style={{color:"#ffd60a",fontWeight:700}}>© Lemonade Project</div><div>Squeeze &amp; Made</div><div>by Damon99</div></div></div></div>);
+  var Header=(<div style={D.hdr}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={D.hT}>Finance Tracker 🍋</div><div style={D.hS}>{FMO[mo]} {yr}</div></div><div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}><div style={D.hC}><div style={{color:"#ffd60a",fontWeight:700}}>© Lemonade Project</div><div>Squeeze &amp; Made</div><div>by Damon99</div></div><button onClick={function(){window._signOut();}} style={{fontSize:9,color:"#555",background:"transparent",border:"none",cursor:"pointer",textDecoration:"underline"}}>Sign out</button></div></div></div>);
   var MonthRow=(<div style={D.mrow}><button style={D.arB} onClick={prevMo}>{"<"}</button><select style={D.sel} value={mo} onChange={function(e){setMo(+e.target.value);}}>{MO.map(function(m,i){return <option key={i} value={i}>{m}</option>;})}</select><select style={D.sel} value={yr} onChange={function(e){setYr(+e.target.value);}}>{yrs.map(function(y){return <option key={y}>{y}</option>;})}</select><button style={D.arB} onClick={nextMo}>{">"}</button>{tab==="income"&&<button style={D.gBtn} onClick={function(){setForm({category:"Income",subcategory:"Salary",amount:"",note:"",date:dd(mo,yr)});setView("add");}}>+ Add Income</button>}{tab==="expenses"&&<button style={D.aBtn} onClick={function(){setForm({category:"Transport",subcategory:"Fuel",amount:"",note:"",date:dd(mo,yr)});setView("add");}}>+ Add Expense</button>}</div>);
 
   if(view==="add"){
