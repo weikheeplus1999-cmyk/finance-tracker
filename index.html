@@ -95,7 +95,7 @@ const MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec
 const FMO=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const PC=["#60a5fa","#fb923c","#c084fc","#f472b6","#34d399","#22d3ee","#facc15","#4ade80"];
 const fmt=n=>"RM "+Math.abs(n).toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2});
-const SK="txns",SK_S="savings",SK_F="freecash";
+const SK="txns",SK_S="savings",SK_F="freecash",SK_N="notes";
 const mkKey=(m,y)=>y+"-"+String(m+1).padStart(2,"0");
 const sameMo=(s,i,y)=>{const p=s.split("-");return parseInt(p[1],10)-1===i&&parseInt(p[0],10)===y;};
 const APRIL=[
@@ -128,7 +128,7 @@ async function sd(k,v){try{const str=JSON.stringify(v);localStorage.setItem(k,st
 function Pie({data,size}){size=size||150;if(!data||!data.length)return null;const tot=data.reduce(function(s,d){return s+d.v;},0);if(!tot)return null;let cum=0;const sl=data.map(function(d,i){const p=d.v/tot,a1=cum*2*Math.PI-Math.PI/2,a2=(cum+p)*2*Math.PI-Math.PI/2;cum+=p;const r=size/2-6,cx=size/2,cy=size/2;return{path:"M"+cx+","+cy+" L"+(cx+r*Math.cos(a1))+","+(cy+r*Math.sin(a1))+" A"+r+","+r+",0,"+(p>0.5?1:0)+",1,"+(cx+r*Math.cos(a2))+","+(cy+r*Math.sin(a2))+" Z",c:PC[i%PC.length]};});return(<svg width={size} height={size} viewBox={"0 0 "+size+" "+size}>{sl.map(function(s,i){return <path key={i} d={s.path} fill={s.c} stroke="#111827" strokeWidth={2}/>;})}<circle cx={size/2} cy={size/2} r={size/3.2} fill="#111827"/></svg>);}
 function Line({pts,color}){color=color||"#4ade80";if(!pts||pts.length<2)return null;const w=300,h=70,p=10,mx=Math.max.apply(null,pts.concat([1]));const xs=pts.map(function(_,i){return p+(i/(pts.length-1))*(w-p*2);});const ys=pts.map(function(v){return h-p-(v/mx)*(h-p*2);});return(<svg width="100%" viewBox={"0 0 "+w+" "+h} preserveAspectRatio="none" style={{display:"block"}}><polyline points={xs.map(function(x,i){return x+","+ys[i];}).join(" ")} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"/>{xs.map(function(x,i){return <circle key={i} cx={x} cy={ys[i]} r={4} fill={color} stroke="#111827" strokeWidth={1.5}/>;})}</svg>);}
 
-const NAV=[{id:"summary",l:"Summary",e:"📊"},{id:"income",l:"Income",e:"💰"},{id:"expenses",l:"Expenses",e:"💸"},{id:"savings",l:"Savings",e:"🏦"},{id:"freecash",l:"Free Cash",e:"🍋"},{id:"comparison",l:"Comparison",e:"📈"}];
+const NAV=[{id:"summary",l:"Summary",e:"📊"},{id:"income",l:"Income",e:"💰"},{id:"expenses",l:"Expenses",e:"💸"},{id:"savings",l:"Savings",e:"🏦"},{id:"freecash",l:"Free Cash",e:"🍋"},{id:"comparison",l:"Comparison",e:"📈"},{id:"notes",l:"Notes",e:"📝"}];
 const D={
   wrap:{background:"#0a0a0a",minHeight:"100vh",padding:"16px",maxWidth:600,margin:"0 auto",color:"#e5e7eb"},
   hdr:{background:"#111111",border:"1px solid #2a2a2a",borderRadius:14,padding:"14px 18px",marginBottom:16},
@@ -196,8 +196,10 @@ function App(){
   const[expYr,setExpYr]=useState(now.getFullYear());
   const[selCat,setSelCat]=useState(null);
   const[fcTab,setFcTab]=useState("spend");
+  const[noteTab,setNoteTab]=useState("expense");
   const[fcF,setFcF]=useState({amount:"",note:"",date:now.toISOString().slice(0,10)});
   const[wdF,setWdF]=useState({amount:"",note:"",date:now.toISOString().slice(0,10)});
+  const[noteForm,setNoteForm]=useState({amount:"",text:"",date:now.toISOString().slice(0,10)});
   const[form,setForm]=useState({category:"Transport",subcategory:"Fuel",amount:"",note:"",date:now.toISOString().slice(0,10)});
 
   function loadData(){Promise.all([gd(SK),gd(SK_S),gd(SK_F)]).then(function(res){const t=res[0],s=res[1],f=res[2];const existing=t||[];const aids=APRIL.map(function(x){return x.id;});const merged=existing.filter(function(x){return aids.indexOf(x.id)===-1;}).concat(APRIL);setTxns(merged);sd(SK,merged);if(s)setSav(s);if(f)setFc(f);setRdy(true);});}
