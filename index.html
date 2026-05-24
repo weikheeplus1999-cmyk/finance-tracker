@@ -71,7 +71,7 @@
 html,body{background:#0a0a0a;color:#e5e7eb;font-family:'Trebuchet MS','Segoe UI',Arial,sans-serif;min-height:100vh;min-height:-webkit-fill-available;}
 html{height:-webkit-fill-available;}
 body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
-select,input,button{font-family:inherit;}
+select,input,button,textarea{font-family:inherit;}
 button:active{opacity:0.85;}
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
 </style>
@@ -178,6 +178,7 @@ function App(){
   const[txns,setTxns]=useState([]);
   const[sav,setSav]=useState({});
   const[fc,setFc]=useState([]);
+  const[notes,setNotes]=useState([]);
   const[ready,setRdy]=useState(false);
   const[tab,setTab]=useState("summary");
   const[view,setView]=useState("main");
@@ -196,13 +197,12 @@ function App(){
   const[expYr,setExpYr]=useState(now.getFullYear());
   const[selCat,setSelCat]=useState(null);
   const[fcTab,setFcTab]=useState("spend");
-  const[noteTab,setNoteTab]=useState("expense");
+  const[noteForm,setNoteForm]=useState({amount:"",text:"",date:now.toISOString().slice(0,10)});
   const[fcF,setFcF]=useState({amount:"",note:"",date:now.toISOString().slice(0,10)});
   const[wdF,setWdF]=useState({amount:"",note:"",date:now.toISOString().slice(0,10)});
-  const[noteForm,setNoteForm]=useState({amount:"",text:"",date:now.toISOString().slice(0,10)});
   const[form,setForm]=useState({category:"Transport",subcategory:"Fuel",amount:"",note:"",date:now.toISOString().slice(0,10)});
 
-  function loadData(){Promise.all([gd(SK),gd(SK_S),gd(SK_F)]).then(function(res){const t=res[0],s=res[1],f=res[2];const existing=t||[];const aids=APRIL.map(function(x){return x.id;});const merged=existing.filter(function(x){return aids.indexOf(x.id)===-1;}).concat(APRIL);setTxns(merged);sd(SK,merged);if(s)setSav(s);if(f)setFc(f);setRdy(true);});}
+  function loadData(){Promise.all([gd(SK),gd(SK_S),gd(SK_F),gd(SK_N)]).then(function(res){const t=res[0],s=res[1],f=res[2],n=res[3];const existing=t||[];const aids=APRIL.map(function(x){return x.id;});const merged=existing.filter(function(x){return aids.indexOf(x.id)===-1;}).concat(APRIL);setTxns(merged);sd(SK,merged);if(s)setSav(s);if(f)setFc(f);if(n)setNotes(n);setRdy(true);});}
 
   useEffect(function(){
     function onAuth(){setAuthState(window._authState||"loading");}
@@ -248,7 +248,7 @@ function App(){
     setAddMsg("✅ "+e.subcategory+" ("+fmt(e.amount)+") added!");
     setTimeout(function(){setAddMsg("");},2500);
     if(eid){setEid(null);setView("main");return;}
-    setForm(function(f){return Object.assign({},f,{amount:"",note:""}); });
+    setForm(function(f){return Object.assign({},f,{amount:"",note:""});});
   }
   function startEdit(t){setEid(t.id);setForm({category:t.category,subcategory:t.subcategory,amount:String(t.amount),note:t.note||"",date:t.date});setView("add");}
   function delT(id){var t=txns.find(function(t){return t.id===id;});var u=txns.filter(function(t){return t.id!==id;});setTxns(u);sd(SK,u);if(t&&t.subcategory==="Free Cash Withdrawal"){var lid="fcwd_"+id.replace("wd_","");var uFc=fc.filter(function(f){return f.id!==lid;});setFc(uFc);sd(SK_F,uFc);}}
@@ -259,8 +259,8 @@ function App(){
   function addFc(){if(!fcF.amount||isNaN(+fcF.amount)||+fcF.amount<=0)return;var e={id:String(Date.now()),amount:parseFloat(fcF.amount),note:fcF.note,date:fcF.date};var u=[e].concat(fc);setFc(u);sd(SK_F,u);setFcF({amount:"",note:"",date:now.toISOString().slice(0,10)});}
   function addWd(){if(!wdF.amount||isNaN(+wdF.amount)||+wdF.amount<=0)return;var ts=String(Date.now());var e={id:"wd_"+ts,category:"Income",subcategory:"Free Cash Withdrawal",amount:parseFloat(wdF.amount),note:wdF.note||"Free cash withdrawal",date:wdF.date};var fe={id:"fcwd_"+ts,amount:parseFloat(wdF.amount),note:"[Withdrawal] "+(wdF.note||"To income"),date:wdF.date,isWithdrawal:true};var ut=[e].concat(txns);setTxns(ut);sd(SK,ut);var uf2=[fe].concat(fc);setFc(uf2);sd(SK_F,uf2);setWdF({amount:"",note:"",date:now.toISOString().slice(0,10)});}
   function delFc(id){var f=fc.find(function(f){return f.id===id;});var u=fc.filter(function(f){return f.id!==id;});setFc(u);sd(SK_F,u);if(f&&f.isWithdrawal){var lid="wd_"+id.replace("fcwd_","");var ut=txns.filter(function(t){return t.id!==lid;});setTxns(ut);sd(SK,ut);}}
-  function expBk(){try{var bk={version:1,txns:txns,savings:sav,fcTxns:fc,exportedAt:new Date().toISOString()};var blob=new Blob([JSON.stringify(bk,null,2)],{type:"application/json"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="lemonade_backup_"+new Date().toISOString().slice(0,10)+".json";document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(url);document.body.removeChild(a);},100);}catch(e){var bk2={version:1,txns:txns,savings:sav,fcTxns:fc};var a2=document.createElement("a");a2.setAttribute("href","data:application/json;charset=utf-8,"+encodeURIComponent(JSON.stringify(bk2)));a2.setAttribute("download","lemonade_backup.json");document.body.appendChild(a2);a2.click();document.body.removeChild(a2);}}
-  function impBk(e){var file=e.target.files[0];if(!file)return;var r=new FileReader();r.onload=function(ev){try{var d=JSON.parse(ev.target.result);if(!d.version||!d.txns){alert("Invalid backup.");return;}setTxns(d.txns||[]);sd(SK,d.txns||[]);setSav(d.savings||{});sd(SK_S,d.savings||{});setFc(d.fcTxns||[]);sd(SK_F,d.fcTxns||[]);alert("Restored! "+(d.txns||[]).length+" transactions loaded.");}catch(err){alert("Failed to read file.");}};r.readAsText(file);e.target.value="";}
+  function expBk(){try{var bk={version:1,txns:txns,savings:sav,fcTxns:fc,notes:notes,exportedAt:new Date().toISOString()};var blob=new Blob([JSON.stringify(bk,null,2)],{type:"application/json"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="lemonade_backup_"+new Date().toISOString().slice(0,10)+".json";document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(url);document.body.removeChild(a);},100);}catch(e){var bk2={version:1,txns:txns,savings:sav,fcTxns:fc,notes:notes};var a2=document.createElement("a");a2.setAttribute("href","data:application/json;charset=utf-8,"+encodeURIComponent(JSON.stringify(bk2)));a2.setAttribute("download","lemonade_backup.json");document.body.appendChild(a2);a2.click();document.body.removeChild(a2);}}
+  function impBk(e){var file=e.target.files[0];if(!file)return;var r=new FileReader();r.onload=function(ev){try{var d=JSON.parse(ev.target.result);if(!d.version||!d.txns){alert("Invalid backup.");return;}setTxns(d.txns||[]);sd(SK,d.txns||[]);setSav(d.savings||{});sd(SK_S,d.savings||{});setFc(d.fcTxns||[]);sd(SK_F,d.fcTxns||[]);setNotes(d.notes||[]);sd(SK_N,d.notes||[]);alert("Restored! "+(d.txns||[]).length+" transactions loaded.");}catch(err){alert("Failed to read file.");}};r.readAsText(file);e.target.value="";}
   function expCSV(){var rows=txns.filter(function(t){return sameMo(t.date,expMo,expYr);});var lines=["Date,Category,Subcategory,Amount,Note"].concat(rows.map(function(r){return[r.date,r.category,r.subcategory,r.amount,'"'+(r.note||"")+'"'].join(",");}));var a=document.createElement("a");a.setAttribute("href","data:text/csv;charset=utf-8,"+encodeURIComponent(lines.join("\n")));a.setAttribute("download","lemonade_"+MO[expMo]+"_"+expYr+".csv");document.body.appendChild(a);a.click();document.body.removeChild(a);}
 
   if(authState==="loading")return(<div style={{background:"#0a0a0a",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><div style={{fontSize:40}}>🍋</div><div style={{fontSize:14,color:"#ffd60a",fontWeight:700,letterSpacing:1}}>LOADING LEMONADE...</div></div>);
@@ -399,6 +399,47 @@ function App(){
         <div style={D.card}><div style={D.secL}>Summary</div><div style={D.secT}>Summary comparison</div>{[{l:"Income",a:cmp.iA,b:cmp.iB},{l:"Expenses",a:cmp.eA,b:cmp.eB},{l:"Net",a:cmp.iA-cmp.eA,b:cmp.iB-cmp.eB}].map(function(row){var mx=Math.max(Math.abs(row.a),Math.abs(row.b),1);return <div key={row.l} style={{marginBottom:12}}><div style={{fontSize:11,fontWeight:600,color:"#6b7280",marginBottom:6,textAlign:"center",textTransform:"uppercase",letterSpacing:"0.05em"}}>{row.l}</div><div style={{display:"flex",flexDirection:"column",gap:4}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,color:"#60a5fa",width:32,textAlign:"right",flexShrink:0}}>{MO[cmpA]}</span><div style={D.bTrk}><div style={D.bFil("#60a5fa",(Math.abs(row.a)/mx)*100)}></div></div><span style={{fontSize:12,color:"#9ca3af",width:80,textAlign:"right",flexShrink:0}}>{row.a<0?"-":""}{fmt(row.a)}</span></div><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,color:"#c084fc",width:32,textAlign:"right",flexShrink:0}}>{MO[cmpB]}</span><div style={D.bTrk}><div style={D.bFil("#c084fc",(Math.abs(row.b)/mx)*100)}></div></div><span style={{fontSize:12,color:"#9ca3af",width:80,textAlign:"right",flexShrink:0}}>{row.b<0?"-":""}{fmt(row.b)}</span></div></div></div>;})}</div>
         {Footer}
       </div>}
+
+      {tab==="notes"&&(function(){
+        var moNotes=notes.filter(function(n){return n.date&&sameMo(n.date,mo,yr);}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+        function addNote(){
+          if(!noteForm.text.trim())return;
+          var e={id:String(Date.now()),date:noteForm.date,text:noteForm.text.trim(),amount:noteForm.amount&&!isNaN(+noteForm.amount)&&+noteForm.amount>0?parseFloat(noteForm.amount):null};
+          var u=[e].concat(notes);
+          setNotes(u);sd(SK_N,u);
+          setNoteForm({amount:"",text:"",date:now.toISOString().slice(0,10)});
+        }
+        function delNote(id){var u=notes.filter(function(n){return n.id!==id;});setNotes(u);sd(SK_N,u);}
+        return(<div>
+          <div style={D.card}>
+            <div style={D.secL}>Add Note</div>
+            <div style={D.secT}>📝 New note — {FMO[mo]} {yr}</div>
+            <div style={D.fGrp}><label style={D.fLbl}>Date</label><input style={D.fInp} type="date" value={noteForm.date} onChange={function(e){setNoteForm(function(f){return Object.assign({},f,{date:e.target.value});})}}/></div>
+            <div style={D.fGrp}><label style={D.fLbl}>Note / Memo</label><textarea style={Object.assign({},D.fInp,{minHeight:90,resize:"vertical",textAlign:"left",lineHeight:1.6,padding:"10px 12px"})} placeholder="Write your note here..." value={noteForm.text} onChange={function(e){setNoteForm(function(f){return Object.assign({},f,{text:e.target.value});})}}/></div>
+            <div style={D.fGrp}><label style={D.fLbl}>Amount (RM) — optional</label><input style={D.fInp} type="number" min="0" step="0.01" placeholder="0.00" value={noteForm.amount} onChange={function(e){setNoteForm(function(f){return Object.assign({},f,{amount:e.target.value});})}}/></div>
+            <button style={D.sBtn} onClick={addNote}>📝 Save Note</button>
+          </div>
+          <div style={D.card}>
+            <div style={D.secL}>History</div>
+            <div style={D.secT}>📋 Notes — {FMO[mo]} {yr}</div>
+            {moNotes.length===0&&<p style={{color:"#4b5563",fontSize:13,textAlign:"center",padding:"18px 0"}}>No notes for this month yet.</p>}
+            {moNotes.map(function(n){return(
+              <div key={n.id} style={{padding:"13px 0",borderBottom:"1px solid #1a1a1a"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:11,color:"#4b5563",marginBottom:5}}>{n.date}</div>
+                    <div style={{fontSize:13,color:"#e5e7eb",lineHeight:1.65,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{n.text}</div>
+                    {n.amount!=null&&<div style={{fontSize:12,color:"#ffd60a",fontWeight:700,marginTop:6,display:"inline-flex",alignItems:"center",gap:4,background:"#2a2200",padding:"3px 9px",borderRadius:20}}>💰 {fmt(n.amount)}</div>}
+                  </div>
+                  <button onClick={function(){delNote(n.id);}} style={Object.assign({},D.dBtn,{flexShrink:0,marginLeft:4})}>🗑️</button>
+                </div>
+              </div>
+            );})}
+          </div>
+          {Footer}
+        </div>);
+      })()}
+
     </div>
   );
 }
