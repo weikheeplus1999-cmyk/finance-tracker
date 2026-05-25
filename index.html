@@ -135,8 +135,8 @@ const D={
   hT:{fontSize:24,fontWeight:900,color:"#ffffff",letterSpacing:2,textTransform:"uppercase",fontStyle:"italic"},
   hS:{fontSize:12,color:"#ffd60a",fontWeight:700,marginTop:3},
   hC:{fontSize:9,color:"#555",textAlign:"right",lineHeight:1.8},
-  nav:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16},
-  navB:function(a){return{padding:"10px 6px",borderRadius:10,border:a?"1px solid #ffd60a":"1px solid #2a2a2a",background:a?"#2a2200":"#1a1a1a",color:a?"#ffd60a":"#6b7280",cursor:"pointer",fontSize:12,fontWeight:a?700:400,display:"flex",flexDirection:"column",alignItems:"center",gap:3,textAlign:"center"};},
+  nav:{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16},
+  navB:function(a){return{padding:"10px 6px",borderRadius:10,border:a?"1px solid #ffd60a":"1px solid #2a2a2a",background:a?"#2a2200":"#1a1a1a",color:a?"#ffd60a":"#6b7280",cursor:"pointer",fontSize:12,fontWeight:a?700:400,display:"flex",flexDirection:"column",alignItems:"center",gap:3,textAlign:"center",flex:"1 1 calc(33.333% - 6px)",minWidth:90};},
   mrow:{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap",justifyContent:"center"},
   sel:{padding:"7px 10px",borderRadius:8,border:"1px solid #2a2a2a",background:"#1a1a1a",color:"#e5e7eb",fontSize:13},
   arB:{padding:"7px 11px",borderRadius:8,border:"1px solid #2a2a2a",background:"#1a1a1a",color:"#e5e7eb",cursor:"pointer",fontSize:15,fontWeight:700,display:"inline-flex",alignItems:"center"},
@@ -325,7 +325,7 @@ function App(){
   return(
     <div style={D.wrap}>
       {Header}
-      <div style={D.nav}>{NAV.map(function(n){return <button key={n.id} style={D.navB(tab===n.id)} onClick={function(){setTab(n.id);setSelMode(false);setSel([]);setSelCat(null);}}><span style={{fontSize:18}}>{n.e}</span><span>{n.l}</span></button>;})}</div>
+      <div style={Object.assign({},D.nav,{justifyContent:"center"})}>{NAV.map(function(n){return <button key={n.id} style={D.navB(tab===n.id)} onClick={function(){setTab(n.id);setSelMode(false);setSel([]);setSelCat(null);}}><span style={{fontSize:18}}>{n.e}</span><span>{n.l}</span></button>;})}</div>
       {tab!=="comparison"&&tab!=="freecash"&&tab!=="notes"&&MonthRow}
 
       {tab==="summary"&&<div>
