@@ -326,7 +326,7 @@ function App(){
     <div style={D.wrap}>
       {Header}
       <div style={D.nav}>{NAV.map(function(n){return <button key={n.id} style={D.navB(tab===n.id)} onClick={function(){setTab(n.id);setSelMode(false);setSel([]);setSelCat(null);}}><span style={{fontSize:18}}>{n.e}</span><span>{n.l}</span></button>;})}</div>
-      {tab!=="comparison"&&tab!=="freecash"&&MonthRow}
+      {tab!=="comparison"&&tab!=="freecash"&&tab!=="notes"&&MonthRow}
 
       {tab==="summary"&&<div>
         <div style={Object.assign({},D.g2,{marginBottom:14})}>
@@ -339,6 +339,7 @@ function App(){
         {catT.length>0&&<div style={D.card}><div style={D.secL}>🍋 Breakdown</div><div style={D.secT}>Expenses by category</div><div style={{display:"flex",justifyContent:"center",marginBottom:14}}><Pie data={catT.map(function(x){return{label:x[0],v:x[1]};})} size={150}/></div><div style={{display:"flex",flexWrap:"wrap",gap:"5px 12px",justifyContent:"center",marginBottom:14}}>{catT.map(function(x,i){return <div key={x[0]} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#9ca3af"}}><span style={{width:9,height:9,borderRadius:2,background:PC[i%PC.length],display:"inline-block"}}></span>{x[0]} ({exp>0?Math.round(x[1]/exp*100):0}%)</div>;})}</div>{catT.map(function(x){var m=CATS[x[0]];return <div key={x[0]} style={D.bRow}><div style={D.bIco(m.color)}><span>{m.emoji}</span></div><div style={D.bLbl}>{x[0]}</div><div style={D.bTrk}><div style={D.bFil(m.color,(x[1]/bMax)*100)}></div></div><div style={D.bAmt}>{fmt(x[1])}</div></div>;})}</div>}
         <div style={D.card}><div style={D.secL}>Trend</div><div style={D.secT}>Expense trend {yr}</div><Line pts={trend} color="#fb923c"/><div style={{display:"flex",justifyContent:"space-between",marginTop:5}}>{trend.map(function(v,i){return <div key={i} style={{textAlign:"center",flex:1}}><div style={{fontSize:9,color:"#4b5563"}}>{MO[i]}</div>{v>0&&<div style={{fontSize:9,color:"#fb923c"}}>{Math.round(v/100)/10}k</div>}</div>;})}</div></div>
         <div style={D.card}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div><div style={D.secL}>Latest</div><div style={{fontSize:15,fontWeight:700,color:"#f9fafb"}}>Recent</div></div><button style={D.oBtn} onClick={function(){setTab("expenses");}}>View all</button></div>{filt.length===0&&<p style={{color:"#4b5563",fontSize:13,textAlign:"center",padding:"14px 0"}}>No transactions yet!</p>}{[].concat(filt).sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,5).map(function(t){return <TxRow key={t.id} t={t} showEdit={false}/>;})}</div>
+        <div style={D.card}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div><div style={D.secL}>Notes</div><div style={{fontSize:15,fontWeight:700,color:"#f9fafb"}}>Recent notes</div></div><button style={D.oBtn} onClick={function(){setTab("notes");}}>View all</button></div>{notes.filter(function(n){return n.date&&n.date.startsWith(String(yr));}).length===0&&<p style={{color:"#4b5563",fontSize:13,textAlign:"center",padding:"14px 0"}}>No notes yet!</p>}{[].concat(notes).filter(function(n){return n.date&&n.date.startsWith(String(yr));}).sort(function(a,b){return new Date(b.date)-new Date(a.date);}).slice(0,3).map(function(n){return(<div key={n.id} style={{padding:"10px 0",borderBottom:"1px solid #1a1a1a"}}><div style={{fontSize:11,color:"#4b5563",marginBottom:3}}>{n.date}</div><div style={{fontSize:13,color:"#e5e7eb",lineHeight:1.5,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{n.text}</div>{n.amount!=null&&<div style={{fontSize:11,color:"#ffd60a",fontWeight:700,marginTop:4}}>💰 {fmt(n.amount)}</div>}</div>);})}</div>
         <div style={D.card}><div style={D.secL}>Data</div><div style={D.secT}>🍋 Backup</div><p style={{fontSize:12,color:"#6b7280",textAlign:"center",marginBottom:12}}>Keep your data safe.</p><div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}><button style={D.gBtn} onClick={expBk}>💾 Download Backup</button><button style={D.pBtn} onClick={function(){document.getElementById("ri").click();}}>📂 Restore Backup</button><input id="ri" type="file" accept=".json" style={{display:"none"}} onChange={impBk}/></div></div>
         <div style={D.card}><div style={D.secL}>Export</div><div style={D.secT}>Export to CSV</div><div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}><select style={D.sel} value={expMo} onChange={function(e){setExpMo(+e.target.value);}}>{MO.map(function(m,i){return <option key={i} value={i}>{m}</option>;})}</select><select style={D.sel} value={expYr} onChange={function(e){setExpYr(+e.target.value);}}>{yrs.map(function(y){return <option key={y}>{y}</option>;})}</select><button style={D.gBtn} onClick={expCSV}>⬇️ Download CSV</button></div></div>
         {Footer}
@@ -401,7 +402,7 @@ function App(){
       </div>}
 
       {tab==="notes"&&(function(){
-        var moNotes=notes.filter(function(n){return n.date&&sameMo(n.date,mo,yr);}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+        var yrNotes=notes.filter(function(n){return n.date&&n.date.startsWith(String(yr));}).sort(function(a,b){return new Date(b.date)-new Date(a.date);});
         function addNote(){
           if(!noteForm.text.trim())return;
           var e={id:String(Date.now()),date:noteForm.date,text:noteForm.text.trim(),amount:noteForm.amount&&!isNaN(+noteForm.amount)&&+noteForm.amount>0?parseFloat(noteForm.amount):null};
@@ -411,9 +412,10 @@ function App(){
         }
         function delNote(id){var u=notes.filter(function(n){return n.id!==id;});setNotes(u);sd(SK_N,u);}
         return(<div>
+          <div style={Object.assign({},D.mrow,{justifyContent:"center"})}><select style={D.sel} value={yr} onChange={function(e){setYr(+e.target.value);}}>{yrs.map(function(y){return <option key={y}>{y}</option>;})}</select></div>
           <div style={D.card}>
             <div style={D.secL}>Add Note</div>
-            <div style={D.secT}>📝 New note — {FMO[mo]} {yr}</div>
+            <div style={D.secT}>📝 New note — {yr}</div>
             <div style={D.fGrp}><label style={D.fLbl}>Date</label><input style={D.fInp} type="date" value={noteForm.date} onChange={function(e){setNoteForm(function(f){return Object.assign({},f,{date:e.target.value});})}}/></div>
             <div style={D.fGrp}><label style={D.fLbl}>Note / Memo</label><textarea style={Object.assign({},D.fInp,{minHeight:90,resize:"vertical",textAlign:"left",lineHeight:1.6,padding:"10px 12px"})} placeholder="Write your note here..." value={noteForm.text} onChange={function(e){setNoteForm(function(f){return Object.assign({},f,{text:e.target.value});})}}/></div>
             <div style={D.fGrp}><label style={D.fLbl}>Amount (RM) — optional</label><input style={D.fInp} type="number" min="0" step="0.01" placeholder="0.00" value={noteForm.amount} onChange={function(e){setNoteForm(function(f){return Object.assign({},f,{amount:e.target.value});})}}/></div>
@@ -421,9 +423,10 @@ function App(){
           </div>
           <div style={D.card}>
             <div style={D.secL}>History</div>
-            <div style={D.secT}>📋 Notes — {FMO[mo]} {yr}</div>
-            {moNotes.length===0&&<p style={{color:"#4b5563",fontSize:13,textAlign:"center",padding:"18px 0"}}>No notes for this month yet.</p>}
-            {moNotes.map(function(n){return(
+            <div style={D.secT}>📋 Notes — {yr}</div>
+            <div style={{fontSize:12,color:"#4b5563",textAlign:"center",marginBottom:12}}>{yrNotes.length} note{yrNotes.length!==1?"s":""} this year</div>
+            {yrNotes.length===0&&<p style={{color:"#4b5563",fontSize:13,textAlign:"center",padding:"18px 0"}}>No notes for {yr} yet.</p>}
+            {yrNotes.map(function(n){return(
               <div key={n.id} style={{padding:"13px 0",borderBottom:"1px solid #1a1a1a"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                   <div style={{flex:1,minWidth:0}}>
